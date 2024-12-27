@@ -1,0 +1,28 @@
+* @platform-team
+
+# GitHub configuration and workflow files
+.github/* @platform-team @security-team
+
+# Backend Services
+src/backend/api-gateway/* @backend-team @security-team
+src/backend/translation-service/* @ml-team @backend-team
+src/backend/validation-service/* @backend-team @security-team
+
+# Frontend Application
+src/web/* @frontend-team
+
+# Infrastructure and Deployment
+infrastructure/* @platform-team @security-team
+infrastructure/kubernetes/security/* @security-team
+
+# Docker configurations
+**/Dockerfile* @platform-team
+
+# Terraform configurations
+**/*.tf @platform-team
+
+# Test files
+**/*.test.* @qa-team
+
+# Security-related configurations
+**/security.* @security-team
