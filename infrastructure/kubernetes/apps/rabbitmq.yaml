@@ -1,0 +1,193 @@
+---
+# ConfigMap containing RabbitMQ configuration for high availability and clustering
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  namespace: detection-platform
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/part-of: detection-translation-platform
+data:
+  rabbitmq.conf: |
+    cluster_formation.peer_discovery_backend = rabbit_peer_discovery_k8s
+    cluster_formation.k8s.host = kubernetes.default.svc.cluster.local
+    cluster_formation.k8s.address_type = hostname
+    cluster_partition_handling = autoheal
+    queue_master_locator = min-masters
+    ha-mode = all
+    ha-sync-mode = automatic
+    vm_memory_high_watermark.relative = 0.7
+    disk_free_limit.relative = 2.0
+    prometheus.return_per_object_metrics = true
+    management.ssl.port = 15671
+    ssl_options.verify = verify_peer
+    ssl_options.fail_if_no_peer_cert = false
+
+---
+# Secret containing RabbitMQ credentials and certificates
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbitmq-secret
+  namespace: detection-platform
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/part-of: detection-translation-platform
+type: Opaque
+data:
+  RABBITMQ_ERLANG_COOKIE: ${base64_encoded_cookie}
+  RABBITMQ_DEFAULT_USER: ${base64_encoded_user}
+  RABBITMQ_DEFAULT_PASS: ${base64_encoded_password}
+  TLS_CERT: ${base64_encoded_cert}
+  TLS_KEY: ${base64_encoded_key}
+  CA_CERT: ${base64_encoded_ca}
+
+---
+# Service exposing RabbitMQ cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-service
+  namespace: detection-platform
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/part-of: detection-translation-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: amqps
+      port: 5671
+      targetPort: 5671
+    - name: management
+      port: 15672
+      targetPort: 15672
+    - name: management-tls
+      port: 15671
+      targetPort: 15671
+    - name: prometheus
+      port: 15692
+      targetPort: 15692
+  selector:
+    app: rabbitmq
+
+---
+# StatefulSet for RabbitMQ cluster
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: detection-platform
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/part-of: detection-translation-platform
+spec:
+  serviceName: rabbitmq
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15692"
+    spec:
+      serviceAccountName: rabbitmq-sa
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsGroup: 999
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: rabbitmq
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.12-management
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5672
+              name: amqp
+            - containerPort: 5671
+              name: amqps
+            - containerPort: 15672
+              name: management
+            - containerPort: 15671
+              name: management-tls
+            - containerPort: 15692
+              name: prometheus
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/rabbitmq/rabbitmq.conf
+              subPath: rabbitmq.conf
+            - name: data
+              mountPath: /var/lib/rabbitmq
+            - name: tls
+              mountPath: /etc/rabbitmq/tls
+              readOnly: true
+          envFrom:
+            - secretRef:
+                name: rabbitmq-secret
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "status"]
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 15
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "check_port_connectivity"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["rabbitmqctl", "stop"]
+      volumes:
+        - name: config
+          configMap:
+            name: rabbitmq-config
+        - name: tls
+          secret:
+            secretName: rabbitmq-secret
+            items:
+              - key: TLS_CERT
+                path: tls.crt
+              - key: TLS_KEY
+                path: tls.key
+              - key: CA_CERT
+                path: ca.crt
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: gp3-encrypted
