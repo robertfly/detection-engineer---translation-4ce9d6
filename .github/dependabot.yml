@@ -1,0 +1,110 @@
+# Dependabot configuration file for Detection Translation Platform
+# Manages automated dependency updates across npm, pip, and go modules
+version: 2
+updates:
+  # Frontend React application dependencies
+  - package-ecosystem: "npm"
+    directory: "/src/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    versioning-strategy: "auto"
+    labels:
+      - "dependencies"
+      - "frontend"
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+
+  # API Gateway Node.js dependencies
+  - package-ecosystem: "npm"
+    directory: "/src/backend/api-gateway"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    versioning-strategy: "auto"
+    labels:
+      - "dependencies"
+      - "api-gateway"
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      api-gateway-dependencies:
+        patterns:
+          - "*"
+
+  # Translation Service Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/src/backend/translation-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "translation-service"
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      translation-dependencies:
+        patterns:
+          - "*"
+
+  # Validation Service Go dependencies
+  - package-ecosystem: "gomod"
+    directory: "/src/backend/validation-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "validation-service"
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      validation-dependencies:
+        patterns:
+          - "*"
+
+  # GitHub Actions workflow dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "ci-cd"
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      github-actions-dependencies:
+        patterns:
+          - "*"
