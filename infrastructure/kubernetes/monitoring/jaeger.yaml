@@ -1,0 +1,191 @@
+# Jaeger Operator version: 1.47+
+# Elasticsearch Operator version: 5.7+
+
+---
+apiVersion: jaegertracing.io/v1
+kind: Jaeger
+metadata:
+  name: jaeger-all-in-one
+  namespace: monitoring
+  labels:
+    app: jaeger
+    component: monitoring
+    managed-by: terraform
+    tier: observability
+    version: 1.47.0
+spec:
+  strategy: production
+  
+  # Storage Configuration with Elasticsearch
+  storage:
+    type: elasticsearch
+    options:
+      es.server-urls: http://elasticsearch-service:9200
+      es.index-prefix: detection-platform
+      es.num-shards: 5
+      es.num-replicas: 1
+      es.bulk.size: "5000000"
+      es.bulk.workers: 5
+      es.bulk.flush-interval: "200ms"
+      es.timeout: "15s"
+      es.tls.enabled: "true"
+    secretName: jaeger-es-secret
+  
+  # Ingress Configuration
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: istio
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - jaeger.detection-platform.internal
+    tls:
+      - secretName: jaeger-tls-cert
+        hosts:
+          - jaeger.detection-platform.internal
+
+  # Agent Configuration
+  agent:
+    strategy: DaemonSet
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+
+  # Collector Configuration
+  collector:
+    replicas: 2
+    resources:
+      limits:
+        cpu: "1"
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 80
+      targetMemoryUtilizationPercentage: 80
+    options:
+      collector.queue-size: "2000"
+      collector.num-workers: "50"
+      collector.grpc.tls.enabled: "true"
+
+  # Query Service Configuration
+  query:
+    replicas: 2
+    resources:
+      limits:
+        cpu: "1"
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    serviceMonitor:
+      enabled: true
+    options:
+      query.max-clock-skew-adjustment: "5s"
+      query.timeout: "30s"
+    
+  # Sampling Configuration
+  sampling:
+    default:
+      type: probabilistic
+      param: 1
+    rules:
+      - service: api-gateway
+        type: probabilistic
+        param: 1
+        operationStrategies:
+          - operation: /api/v1/translate
+            type: probabilistic
+            param: 1
+      - service: translation-service
+        type: probabilistic
+        param: 1
+        operationStrategies:
+          - operation: processDetection
+            type: probabilistic
+            param: 1
+      - service: validation-service
+        type: probabilistic
+        param: 1
+        operationStrategies:
+          - operation: validateRule
+            type: probabilistic
+            param: 1
+
+---
+# Collector Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-collector
+  namespace: monitoring
+  labels:
+    app: jaeger
+    component: collector
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 14250
+      targetPort: 14250
+    - name: http
+      port: 14268
+      targetPort: 14268
+    - name: admin
+      port: 14269
+      targetPort: 14269
+  selector:
+    app: jaeger
+    component: collector
+
+---
+# Query Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-query
+  namespace: monitoring
+  labels:
+    app: jaeger
+    component: query
+spec:
+  type: ClusterIP
+  ports:
+    - name: query
+      port: 16686
+      targetPort: 16686
+    - name: admin
+      port: 16687
+      targetPort: 16687
+  selector:
+    app: jaeger
+    component: query
+
+---
+# Service Monitor for Prometheus Integration
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: jaeger-monitor
+  namespace: monitoring
+  labels:
+    app: jaeger
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: jaeger
+  endpoints:
+    - port: admin
+      interval: 15s
+    - port: query
+      interval: 15s
