@@ -1,0 +1,46 @@
+# Istio Gateway configuration for Detection Translation Platform
+# Version: networking.istio.io/v1beta1
+# Purpose: Defines the entry point for external traffic with TLS termination and protocol selection
+# Dependencies:
+# - Certificate: detection-translator-tls (from cert-manager)
+# - Namespace: detection-platform
+
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: detection-translator-gateway
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: gateway
+spec:
+  # Select Istio ingress gateway pods for traffic handling
+  selector:
+    istio: ingressgateway
+  
+  # Server configurations for HTTPS and HTTP traffic
+  servers:
+    # HTTPS server configuration with TLS 1.3
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      hosts:
+        - detection-translator.example.com
+      tls:
+        # Simple TLS termination mode using provided certificate
+        mode: SIMPLE
+        credentialName: detection-translator-tls
+        # Enforce minimum TLS 1.3 for enhanced security
+        minProtocolVersion: TLSV1_3
+    
+    # HTTP server configuration with automatic HTTPS redirect
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - detection-translator.example.com
+      tls:
+        # Force redirect all HTTP traffic to HTTPS
+        httpsRedirect: true
