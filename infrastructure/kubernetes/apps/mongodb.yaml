@@ -1,0 +1,165 @@
+# MongoDB StatefulSet Configuration for Detection Translation Platform
+# Version: 6.0
+# Purpose: Highly available MongoDB deployment with security and persistence
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: detection-platform
+  labels:
+    app: mongodb
+    component: database
+    part-of: detection-platform
+spec:
+  serviceName: mongodb
+  replicas: 3  # High availability with 3-node replica set
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+        component: database
+      annotations:
+        security.kubernetes.io/enforce-mountable-secrets: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9216"  # MongoDB exporter metrics port
+    spec:
+      # Security Context for MongoDB container
+      securityContext:
+        fsGroup: 999  # mongodb group
+        runAsUser: 999  # mongodb user
+        runAsNonRoot: true
+      # Anti-affinity to spread replicas across nodes
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - mongodb
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: mongodb
+          image: mongodb:6.0  # Official MongoDB 6.0 image
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 27017
+              name: mongodb
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: detection-platform-secrets
+                  key: MONGODB_USER
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: detection-platform-secrets
+                  key: MONGODB_PASSWORD
+            # Replica set configuration
+            - name: MONGO_REPLSET_NAME
+              value: "detection-rs"
+            - name: MONGO_REPLSET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: detection-platform-secrets
+                  key: MONGODB_REPLSET_KEY
+          volumeMounts:
+            - name: mongodb-data
+              mountPath: /data/db
+            - name: mongodb-config
+              mountPath: /config
+            - name: mongodb-keyfile
+              mountPath: /etc/mongodb
+              readOnly: true
+          # Liveness probe configuration
+          livenessProbe:
+            exec:
+              command:
+                - mongo
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness probe configuration
+          readinessProbe:
+            exec:
+              command:
+                - mongo
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+      volumes:
+        - name: mongodb-config
+          configMap:
+            name: detection-platform-config
+            items:
+              - key: mongodb-config
+                path: mongod.conf
+        - name: mongodb-keyfile
+          secret:
+            secretName: detection-platform-secrets
+            defaultMode: 0400
+            items:
+              - key: mongodb-keyfile
+                path: keyfile
+  # Persistent Volume Claims for MongoDB data
+  volumeClaimTemplates:
+    - metadata:
+        name: mongodb-data
+        labels:
+          app: mongodb
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3-encrypted  # AWS gp3 storage with encryption
+        resources:
+          requests:
+            storage: 100Gi  # 100GB storage per replica
+---
+# Headless Service for MongoDB StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: detection-platform
+  labels:
+    app: mongodb
+    component: database
+spec:
+  clusterIP: None  # Headless service
+  ports:
+    - port: 27017
+      targetPort: mongodb
+      protocol: TCP
+      name: mongodb
+  selector:
+    app: mongodb
+---
+# Pod Disruption Budget for MongoDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mongodb-pdb
+  namespace: detection-platform
+spec:
+  minAvailable: 2  # Ensure at least 2 pods are available during disruptions
+  selector:
+    matchLabels:
+      app: mongodb
