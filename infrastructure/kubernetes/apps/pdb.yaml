@@ -1,0 +1,74 @@
+# Kubernetes API version: policy/v1
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-pdb
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: web
+    tier: frontend
+    managed-by: kubernetes
+    environment: production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: detection-translator
+      component: web
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-gateway-pdb
+  namespace: detection-platform
+  labels:
+    app: api-gateway
+    component: gateway
+    tier: backend
+    managed-by: kubernetes
+    environment: production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+      component: gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: translation-service-pdb
+  namespace: detection-platform
+  labels:
+    app.kubernetes.io/name: translation-service
+    app.kubernetes.io/component: translation
+    app.kubernetes.io/part-of: detection-platform
+    tier: backend
+    managed-by: kubernetes
+    environment: production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: translation-service
+      app.kubernetes.io/component: translation
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: validation-service-pdb
+  namespace: detection-platform
+  labels:
+    app.kubernetes.io/name: validation-service
+    app.kubernetes.io/component: validation
+    app.kubernetes.io/part-of: detection-platform
+    tier: backend
+    managed-by: kubernetes
+    environment: production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: validation-service
+      app.kubernetes.io/component: validation
