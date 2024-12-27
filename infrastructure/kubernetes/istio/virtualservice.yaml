@@ -1,0 +1,67 @@
+# Istio VirtualService configuration for Detection Translation Platform
+# Version: networking.istio.io/v1beta1
+# Purpose: Defines traffic routing rules with resilience policies and security controls
+# Dependencies:
+# - Gateway: detection-translator-gateway
+# - Services: web-service, api-gateway-service
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: detection-translator-vs
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: routing
+spec:
+  # Define the host domain for the virtual service
+  hosts:
+    - detection-translator.example.com
+  
+  # Reference the Istio Gateway for incoming traffic
+  gateways:
+    - detection-translator-gateway
+  
+  # HTTP routing rules
+  http:
+    # API traffic routing configuration
+    - match:
+        - uri:
+            prefix: /api
+      route:
+        - destination:
+            host: api-gateway
+            port:
+              number: 3000
+          # Configure timeout and retry policies for API requests
+          timeout: 30s
+          retries:
+            attempts: 3
+            perTryTimeout: 2s
+            retryOn: connect-failure,refused-stream,unavailable,cancelled,resource-exhausted
+      # CORS policy for API endpoints
+      corsPolicy:
+        allowOrigins:
+          - exact: https://detection-translator.example.com
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowHeaders:
+          - Authorization
+          - Content-Type
+        maxAge: 24h
+    
+    # Web frontend traffic routing configuration
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: web
+            port:
+              number: 80
+          # Configure timeout for web frontend requests
+          timeout: 10s
