@@ -1,0 +1,63 @@
+---
+# Primary namespace for Detection Translation Platform microservices
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: detection-platform
+  labels:
+    name: detection-platform
+    environment: production
+    managed-by: terraform
+    app.kubernetes.io/name: detection-platform
+    app.kubernetes.io/part-of: detection-translation-platform
+    app.kubernetes.io/managed-by: terraform
+  annotations:
+    istio-injection: enabled
+    linkerd.io/inject: enabled
+    meta.helm.sh/release-name: detection-platform
+    meta.helm.sh/release-namespace: detection-platform
+spec:
+  finalizers:
+    - kubernetes
+
+---
+# Namespace for monitoring and observability tools
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    environment: production
+    managed-by: terraform
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/part-of: detection-translation-platform
+    app.kubernetes.io/managed-by: terraform
+  annotations:
+    istio-injection: enabled
+    meta.helm.sh/release-name: monitoring
+    meta.helm.sh/release-namespace: monitoring
+spec:
+  finalizers:
+    - kubernetes
+
+---
+# Namespace for security components and policies
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security
+  labels:
+    name: security
+    environment: production
+    managed-by: terraform
+    app.kubernetes.io/name: security
+    app.kubernetes.io/part-of: detection-translation-platform
+    app.kubernetes.io/managed-by: terraform
+  annotations:
+    istio-injection: enabled
+    meta.helm.sh/release-name: security
+    meta.helm.sh/release-namespace: security
+spec:
+  finalizers:
+    - kubernetes
