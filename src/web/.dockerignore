@@ -1,0 +1,94 @@
+node_modules
+.pnpm-store
+yarn.lock
+package-lock.json
+
+# Build outputs
+dist
+build
+.next
+out
+coverage
+.cache
+
+# Development environments
+.vscode
+.idea
+.env*
+.editorconfig
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Test files
+__tests__
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+coverage
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Configuration files
+.eslintrc*
+.prettierrc*
+.stylelintrc*
+jest.config.*
+tsconfig.*
+babel.config.*
+postcss.config.*
+.dockerignore
+Dockerfile*
+
+# Documentation
+*.md
+docs
+LICENSE
+CHANGELOG
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Development assets
+src/**/*.test.*
+src/**/*.spec.*
+src/**/__tests__/*
+src/**/__mocks__/*
+src/**/*.stories.*
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# Debug files
+.debug
+*.pdb
+
+# IDE specific
+.settings
+.project
+.classpath
+.factorypath
+*.sublime-*
+*.iml
+.metals
+
+# Misc
+.tmp
+.temp
+*.bak
