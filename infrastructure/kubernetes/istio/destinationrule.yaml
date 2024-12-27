@@ -1,0 +1,101 @@
+# Istio DestinationRule configuration for Detection Translation Platform
+# Version: networking.istio.io/v1beta1
+# Purpose: Defines comprehensive traffic policies and load balancing for production services
+# Dependencies:
+# - VirtualService: detection-translator-vs
+# - Services: web-service, api-gateway-service
+
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: detection-translator-dr
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: traffic-policy
+    environment: production
+
+spec:
+  # Primary host for API Gateway service
+  host: api-gateway
+  
+  # Global traffic policy configuration
+  trafficPolicy:
+    # Load balancing configuration
+    loadBalancer:
+      simple: ROUND_ROBIN
+    
+    # Connection pool settings for TCP and HTTP
+    connectionPool:
+      # TCP connection pool settings
+      tcp:
+        maxConnections: 100  # Maximum concurrent TCP connections
+        connectTimeout: 5s   # Connection establishment timeout
+        tcpKeepalive:
+          time: 7200s       # Keepalive duration
+          interval: 75s     # Interval between keepalive probes
+          probes: 3         # Number of keepalive probes
+      
+      # HTTP connection pool settings
+      http:
+        http1MaxPendingRequests: 100    # Max pending HTTP/1.1 requests
+        maxRequestsPerConnection: 10     # Max requests per keep-alive connection
+        maxRetries: 3                    # Maximum number of retries
+        idleTimeout: 30s                 # Connection idle timeout
+        h2MaxRequests: 1000             # Max concurrent HTTP/2 requests
+    
+    # Circuit breaker and outlier detection configuration
+    outlierDetection:
+      consecutive5xxErrors: 5            # Number of 5xx errors before ejection
+      interval: 30s                      # Interval for checking errors
+      baseEjectionTime: 30s             # Base duration for ejection
+      maxEjectionPercent: 10            # Maximum percentage of instances to eject
+      minHealthPercent: 50              # Minimum healthy instances percentage
+  
+  # Service subsets for version-based routing
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+
+---
+# Web Frontend DestinationRule
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: web-dr
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: traffic-policy
+    environment: production
+
+spec:
+  host: web
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 5s
+        tcpKeepalive:
+          time: 7200s
+          interval: 75s
+          probes: 3
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+        idleTimeout: 30s
+        h2MaxRequests: 500
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 10
+      minHealthPercent: 50
+  subsets:
+    - name: v1
+      labels:
+        version: v1
