@@ -1,0 +1,191 @@
+name: Security Scan
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches:
+      - main
+      - develop
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly scan on Sunday at midnight
+
+env:
+  SNYK_SEVERITY_THRESHOLD: high
+  TRIVY_SEVERITY: HIGH,CRITICAL
+  CODEQL_LANGUAGES: javascript,python,go
+  SCAN_TIMEOUT_MINUTES: 30
+  FAIL_ON_SEVERITY: high,critical
+  CACHE_KEY_PREFIX: security-scan
+  REPORT_RETENTION_DAYS: 90
+
+jobs:
+  dependency_scan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ env.SCAN_TIMEOUT_MINUTES }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/snyk
+          key: ${{ env.CACHE_KEY_PREFIX }}-deps-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ env.CACHE_KEY_PREFIX }}-deps-
+
+      - name: Setup Snyk
+        uses: snyk/actions/setup@v3
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Scan Frontend Dependencies
+        run: |
+          cd src/web
+          snyk test --severity-threshold=${{ env.SNYK_SEVERITY_THRESHOLD }} --json > frontend-deps-report.json || echo "Vulnerabilities found"
+
+      - name: Scan API Gateway Dependencies
+        run: |
+          cd src/backend/api-gateway
+          snyk test --severity-threshold=${{ env.SNYK_SEVERITY_THRESHOLD }} --json > api-deps-report.json || echo "Vulnerabilities found"
+
+      - name: Scan Python Dependencies
+        run: |
+          snyk test --command=python --file=src/backend/translation-service/requirements.txt --severity-threshold=${{ env.SNYK_SEVERITY_THRESHOLD }} --json > python-deps-report.json || echo "Vulnerabilities found"
+
+      - name: Scan Go Dependencies
+        run: |
+          snyk test --command=golang --file=src/backend/validation-service/go.mod --severity-threshold=${{ env.SNYK_SEVERITY_THRESHOLD }} --json > go-deps-report.json || echo "Vulnerabilities found"
+
+      - name: Generate Consolidated Report
+        run: |
+          jq -s '.' ./*-deps-report.json > consolidated-deps-report.json
+
+      - name: Upload Dependency Scan Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-scan-results
+          path: |
+            *-deps-report.json
+          retention-days: ${{ env.REPORT_RETENTION_DAYS }}
+
+  container_scan:
+    name: Container Security Scan
+    needs: [dependency_scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ env.SCAN_TIMEOUT_MINUTES }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download container artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: docker-images
+          path: ./docker-images
+
+      - name: Setup Trivy
+        uses: aquasecurity/trivy-action@0.14.0
+        with:
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: true
+
+      - name: Scan Frontend Container
+        run: trivy image --severity ${{ env.TRIVY_SEVERITY }} frontend:latest
+
+      - name: Scan API Gateway Container
+        run: trivy image --severity ${{ env.TRIVY_SEVERITY }} api-gateway:latest
+
+      - name: Scan Translation Service Container
+        run: trivy image --severity ${{ env.TRIVY_SEVERITY }} translation-service:latest
+
+      - name: Scan Validation Service Container
+        run: trivy image --severity ${{ env.TRIVY_SEVERITY }} validation-service:latest
+
+      - name: Upload Container Scan Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: container-scan-results
+          path: trivy-results.json
+          retention-days: ${{ env.REPORT_RETENTION_DAYS }}
+
+  code_analysis:
+    name: Static Code Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ env.SCAN_TIMEOUT_MINUTES }}
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ${{ env.CODEQL_LANGUAGES }}
+          queries: security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "/language:${{ matrix.language }}"
+
+      - name: Upload SARIF report
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: results.sarif
+
+  security_report:
+    name: Generate Security Report
+    needs: [dependency_scan, container_scan, code_analysis]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download all scan results
+        uses: actions/download-artifact@v3
+        with:
+          path: ./scan-results
+
+      - name: Process scan results
+        run: |
+          echo "Security Scan Summary" > security-report.md
+          echo "===================" >> security-report.md
+          echo "Dependency Scan: ${{ needs.dependency_scan.result }}" >> security-report.md
+          echo "Container Scan: ${{ needs.container_scan.result }}" >> security-report.md
+          echo "Code Analysis: ${{ needs.code_analysis.result }}" >> security-report.md
+
+      - name: Upload consolidated report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-report
+          path: |
+            ./scan-results
+            security-report.md
+          retention-days: ${{ env.REPORT_RETENTION_DAYS }}
+
+      - name: Check for critical failures
+        if: contains(needs.*.result, 'failure')
+        run: |
+          echo "Critical security issues detected. Please review the security report."
+          exit 1
