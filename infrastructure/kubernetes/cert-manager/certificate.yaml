@@ -1,0 +1,77 @@
+# cert-manager.io/v1 Certificate resource for managing TLS certificates
+# Used by: Istio Gateway for TLS termination
+# Certificate Provider: Let's Encrypt Production
+# Renewal: 15 days before expiry
+# Key Type: RSA-2048 with dual-use auth
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: detection-translator-tls
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: certificate
+    environment: production
+    managed-by: cert-manager
+  annotations:
+    # Enable temporary certificates during initial provisioning
+    cert-manager.io/issue-temporary-certificate: "true"
+    # Allow direct secret injection for immediate use
+    cert-manager.io/allow-direct-injection: "true"
+
+spec:
+  # Secret name where the certificate will be stored
+  secretName: detection-translator-tls
+  
+  # Certificate validity duration (90 days)
+  duration: "2160h"
+  
+  # Trigger renewal 15 days before expiry
+  renewBefore: "360h"
+  
+  # Certificate subject information
+  subject:
+    organizations:
+      - "Detection Translator Platform"
+    organizationalUnits:
+      - "Security Operations"
+    countries:
+      - "US"
+    localities:
+      - "Production"
+  
+  # Primary domain name
+  commonName: detection-translator.example.com
+  
+  # Domain names covered by this certificate
+  dnsNames:
+    - detection-translator.example.com
+    - api.detection-translator.example.com
+    - "*.detection-translator.example.com"
+  
+  # Reference to Let's Encrypt production issuer
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+    group: cert-manager.io
+  
+  # Private key configuration
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+    rotationPolicy: Always
+  
+  # Certificate usage types
+  usages:
+    - server auth
+    - client auth
+  
+  # Java keystore configuration for legacy compatibility
+  keystores:
+    jks:
+      create: true
+      passwordSecretRef:
+        name: tls-keystore-password
+        key: password
