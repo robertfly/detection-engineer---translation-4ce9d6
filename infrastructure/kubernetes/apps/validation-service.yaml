@@ -1,0 +1,131 @@
+---
+# Deployment configuration for the Validation Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: validation-service
+  namespace: detection-platform
+  labels:
+    app.kubernetes.io/name: validation-service
+    app.kubernetes.io/component: validation
+    app.kubernetes.io/part-of: detection-platform
+spec:
+  replicas: 3  # High availability with 3 replicas
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero-downtime deployments
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: validation-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: validation-service
+        app.kubernetes.io/component: validation
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        sidecar.istio.io/inject: "true"  # Enable Istio service mesh
+    spec:
+      serviceAccountName: validation-service-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 2000
+      containers:
+        - name: validation-service
+          image: detection-platform/validation-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 50052
+              name: grpc
+            - containerPort: 9090
+              name: metrics
+            - containerPort: 8080
+              name: health
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+          envFrom:
+            - configMapRef:
+                name: validation-service-config
+            - secretRef:
+                name: validation-service-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: validation-service
+                topologyKey: kubernetes.io/hostname
+---
+# Service configuration for the Validation Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: validation-service
+  namespace: detection-platform
+  labels:
+    app.kubernetes.io/name: validation-service
+    app.kubernetes.io/component: validation
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+spec:
+  type: ClusterIP
+  ports:
+    - port: 50052
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+    - port: 9090
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    - port: 8080
+      targetPort: health
+      protocol: TCP
+      name: health
+  selector:
+    app.kubernetes.io/name: validation-service
+---
+# PodDisruptionBudget to ensure high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: validation-service-pdb
+  namespace: detection-platform
+spec:
+  minAvailable: 2  # Ensure at least 2 pods are always available
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: validation-service
