@@ -1,0 +1,192 @@
+# Kubernetes RBAC Configuration for Detection Translation Platform
+# Implements comprehensive role-based access control with principle of least privilege
+# Compliant with NIST 800-53 AC-3, AC-6 and SOC 2 Type II requirements
+# Version: 1.0.0
+
+---
+# API Gateway Role - Restricted permissions for API Gateway service
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: api-gateway-role
+  namespace: detection-platform
+  labels:
+    app: api-gateway
+    component: security
+    managed-by: terraform
+    security-tier: critical
+    compliance: soc2
+  annotations:
+    security.platform/audit-logging: "enabled"
+    security.platform/access-review: "required"
+spec:
+  rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list"]
+    resourceNames: ["api-gateway-config", "api-gateway-secrets"]
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    resourceNames: ["restricted-psp"]
+    verbs: ["use"]
+
+---
+# Translation Service Role - Limited access for translation operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: translation-service-role
+  namespace: detection-platform
+  labels:
+    app: translation-service
+    component: security
+    managed-by: terraform
+    security-tier: critical
+    compliance: soc2
+  annotations:
+    security.platform/audit-logging: "enabled"
+    security.platform/access-review: "required"
+spec:
+  rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list"]
+    resourceNames: ["translation-config", "translation-secrets"]
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    resourceNames: ["restricted-psp"]
+    verbs: ["use"]
+
+---
+# Validation Service Role - Controlled access for validation operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: validation-service-role
+  namespace: detection-platform
+  labels:
+    app: validation-service
+    component: security
+    managed-by: terraform
+    security-tier: critical
+    compliance: soc2
+  annotations:
+    security.platform/audit-logging: "enabled"
+    security.platform/access-review: "required"
+spec:
+  rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list"]
+    resourceNames: ["validation-config", "validation-secrets"]
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    resourceNames: ["restricted-psp"]
+    verbs: ["use"]
+
+---
+# Monitoring Cluster Role - Read-only access for monitoring tools
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: monitoring-cluster-role
+  labels:
+    app: monitoring
+    component: security
+    managed-by: terraform
+    security-tier: high
+    compliance: soc2
+  annotations:
+    security.platform/audit-logging: "enabled"
+    security.platform/metrics-collection: "enabled"
+spec:
+  rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    resourceNames: ["privileged-psp"]
+    verbs: ["use"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+
+---
+# API Gateway Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: api-gateway-rolebinding
+  namespace: detection-platform
+  labels:
+    app: api-gateway
+    component: security
+    managed-by: terraform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: api-gateway-role
+subjects:
+- kind: ServiceAccount
+  name: api-gateway-sa
+  namespace: detection-platform
+
+---
+# Translation Service Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: translation-service-rolebinding
+  namespace: detection-platform
+  labels:
+    app: translation-service
+    component: security
+    managed-by: terraform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: translation-service-role
+subjects:
+- kind: ServiceAccount
+  name: translation-service-sa
+  namespace: detection-platform
+
+---
+# Validation Service Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: validation-service-rolebinding
+  namespace: detection-platform
+  labels:
+    app: validation-service
+    component: security
+    managed-by: terraform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: validation-service-role
+subjects:
+- kind: ServiceAccount
+  name: validation-service-sa
+  namespace: detection-platform
+
+---
+# Monitoring Cluster Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: monitoring-clusterrolebinding
+  labels:
+    app: monitoring
+    component: security
+    managed-by: terraform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: monitoring-cluster-role
+subjects:
+- kind: ServiceAccount
+  name: monitoring-sa
+  namespace: monitoring
