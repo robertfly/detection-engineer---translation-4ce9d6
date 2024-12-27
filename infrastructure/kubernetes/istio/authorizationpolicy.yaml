@@ -1,0 +1,75 @@
+# Istio AuthorizationPolicy configuration for Detection Translation Platform
+# Version: security.istio.io/v1beta1
+# Purpose: Implements zero-trust security model with fine-grained service-to-service authorization
+# Dependencies:
+# - Gateway: detection-translator-gateway
+# - VirtualService: detection-translator-vs
+# - ServiceAccounts: api-gateway-sa, translation-service-sa, validation-service-sa
+
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: detection-translator-authz
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: security
+    version: v1
+    part-of: detection-platform
+    managed-by: istio
+  annotations:
+    security.istio.io/audit-mode: "true"
+    security.istio.io/log-level: "info"
+
+spec:
+  # Select all pods in the detection translator application
+  selector:
+    matchLabels:
+      app: detection-translator
+
+  # Default deny-all, explicitly allow specific traffic
+  action: ALLOW
+
+  rules:
+    # API Gateway service authorization rules
+    - from:
+        - source:
+            # Allow only API Gateway service account
+            principals: ["cluster.local/ns/detection-platform/sa/api-gateway-sa"]
+            namespaces: ["detection-platform"]
+      to:
+        - operation:
+            # Allow specific HTTP methods and paths
+            methods: ["POST", "GET"]
+            paths: ["/api/v1/*"]
+            ports: ["8080"]
+      when:
+        # Verify JWT issuer claim
+        - key: "request.auth.claims[iss]"
+          values: ["https://detection-platform.auth0.com/"]
+
+    # Translation Service authorization rules
+    - from:
+        - source:
+            # Allow only Translation service account
+            principals: ["cluster.local/ns/detection-platform/sa/translation-service-sa"]
+            namespaces: ["detection-platform"]
+      to:
+        - operation:
+            # Allow translation and validation operations
+            methods: ["POST"]
+            paths: ["/translate/*", "/validate/*"]
+            ports: ["8080"]
+
+    # Validation Service authorization rules
+    - from:
+        - source:
+            # Allow only Validation service account
+            principals: ["cluster.local/ns/detection-platform/sa/validation-service-sa"]
+            namespaces: ["detection-platform"]
+      to:
+        - operation:
+            # Allow only validation operations
+            methods: ["POST"]
+            paths: ["/validate/*"]
+            ports: ["8080"]
