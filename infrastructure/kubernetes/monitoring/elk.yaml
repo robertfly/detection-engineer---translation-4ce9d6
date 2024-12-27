@@ -1,0 +1,320 @@
+# ELK Stack Kubernetes Manifest
+# Version: 8.10+
+# Purpose: Centralized logging and analytics for Detection Translation Platform
+
+---
+# Elasticsearch StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch-cluster
+  namespace: monitoring
+  labels:
+    app: elasticsearch
+    component: logging
+    managed-by: terraform
+    security-tier: restricted
+spec:
+  serviceName: elasticsearch
+  replicas: 3
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      serviceAccountName: monitoring-sa
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.10.4
+        resources:
+          requests:
+            cpu: "2"
+            memory: "8Gi"
+          limits:
+            cpu: "4"
+            memory: "16Gi"
+        env:
+        - name: cluster.name
+          value: detection-platform-logs
+        - name: node.name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: discovery.seed_hosts
+          value: "elasticsearch-cluster-0.elasticsearch,elasticsearch-cluster-1.elasticsearch,elasticsearch-cluster-2.elasticsearch"
+        - name: cluster.initial_master_nodes
+          value: "elasticsearch-cluster-0,elasticsearch-cluster-1,elasticsearch-cluster-2"
+        - name: ES_JAVA_OPTS
+          value: "-Xms4g -Xmx4g"
+        - name: xpack.security.enabled
+          value: "true"
+        - name: xpack.security.transport.ssl.enabled
+          value: "true"
+        - name: xpack.monitoring.enabled
+          value: "true"
+        - name: xpack.watcher.enabled
+          value: "true"
+        - name: indices.lifecycle.enabled
+          value: "true"
+        - name: indices.lifecycle.poll_interval
+          value: "1h"
+        - name: indices.recovery.max_bytes_per_sec
+          value: "50mb"
+        ports:
+        - containerPort: 9200
+          name: rest
+          protocol: TCP
+        - containerPort: 9300
+          name: inter-node
+          protocol: TCP
+        volumeMounts:
+        - name: elasticsearch-data
+          mountPath: /usr/share/elasticsearch/data
+        - name: elasticsearch-config
+          mountPath: /usr/share/elasticsearch/config/elasticsearch.yml
+          subPath: elasticsearch.yml
+  volumeClaimTemplates:
+  - metadata:
+      name: elasticsearch-data
+    spec:
+      storageClassName: gp3-encrypted
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 200Gi
+
+---
+# Elasticsearch Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: monitoring
+  labels:
+    app: elasticsearch
+spec:
+  clusterIP: None
+  selector:
+    app: elasticsearch
+  ports:
+  - port: 9200
+    name: rest
+  - port: 9300
+    name: inter-node
+
+---
+# Logstash Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash-deployment
+  namespace: monitoring
+  labels:
+    app: logstash
+    component: logging
+    managed-by: terraform
+    security-tier: restricted
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:8.10.4
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        env:
+        - name: pipeline.workers
+          value: "2"
+        - name: xpack.monitoring.enabled
+          value: "true"
+        - name: xpack.security.enabled
+          value: "true"
+        - name: log.level
+          value: "info"
+        - name: queue.type
+          value: "persisted"
+        - name: queue.max_bytes
+          value: "1gb"
+        - name: ELASTICSEARCH_USER
+          valueFrom:
+            secretKeyRef:
+              name: elk-credentials
+              key: elasticsearch-user
+        - name: ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elk-credentials
+              key: elasticsearch-password
+        ports:
+        - containerPort: 5044
+          name: beats
+        volumeMounts:
+        - name: logstash-config
+          mountPath: /usr/share/logstash/config
+        - name: logstash-pipeline
+          mountPath: /usr/share/logstash/pipeline
+        - name: logstash-certs
+          mountPath: /etc/logstash/certs
+      volumes:
+      - name: logstash-config
+        configMap:
+          name: logstash-config
+      - name: logstash-pipeline
+        configMap:
+          name: logstash-pipeline
+      - name: logstash-certs
+        secret:
+          secretName: logstash-certs
+
+---
+# Logstash Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: monitoring
+spec:
+  selector:
+    app: logstash
+  ports:
+  - port: 5044
+    targetPort: beats
+    protocol: TCP
+    name: beats
+
+---
+# Kibana Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana-deployment
+  namespace: monitoring
+  labels:
+    app: kibana
+    component: logging
+    managed-by: terraform
+    security-tier: restricted
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:8.10.4
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "https://elasticsearch:9200"
+        - name: ELASTICSEARCH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: elk-credentials
+              key: elasticsearch-user
+        - name: ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elk-credentials
+              key: elasticsearch-password
+        - name: KIBANA_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: kibana-secrets
+              key: encryption-key
+        - name: REPORTING_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: kibana-secrets
+              key: reporting-key
+        ports:
+        - containerPort: 5601
+          name: http
+        volumeMounts:
+        - name: kibana-config
+          mountPath: /usr/share/kibana/config
+        - name: kibana-certs
+          mountPath: /etc/kibana/certs
+      volumes:
+      - name: kibana-config
+        configMap:
+          name: kibana-config
+      - name: kibana-certs
+        secret:
+          secretName: kibana-certs
+
+---
+# Kibana Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: monitoring
+spec:
+  selector:
+    app: kibana
+  ports:
+  - port: 5601
+    targetPort: http
+    protocol: TCP
+    name: http
+
+---
+# Index Lifecycle Management Policy
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: IndexLifecyclePolicy
+metadata:
+  name: detection-platform-logs
+  namespace: monitoring
+spec:
+  policy:
+    phases:
+      hot:
+        actions:
+          rollover:
+            max_age: "30d"
+            max_size: "50GB"
+      warm:
+        actions:
+          shrink:
+            number_of_shards: 1
+          forcemerge:
+            max_num_segments: 1
+      cold:
+        actions:
+          freeze: {}
+      delete:
+        min_age: "365d"
+        actions:
+          delete: {}
