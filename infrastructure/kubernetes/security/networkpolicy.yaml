@@ -1,0 +1,175 @@
+---
+# Default deny-all network policy implementing zero-trust principles
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: detection-platform
+  annotations:
+    security.kubernetes.io/policy-type: zero-trust
+    compliance.kubernetes.io/nist: AC-4,SC-7
+    policy.kubernetes.io/enforcement: strict
+    description: "Default deny-all policy implementing zero-trust security model"
+spec:
+  podSelector: {}  # Applies to all pods in namespace
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Network policy for API Gateway service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-policy
+  namespace: detection-platform
+  annotations:
+    security.kubernetes.io/policy-type: service-specific
+    compliance.kubernetes.io/nist: AC-4,SC-7
+    monitoring.kubernetes.io/ports: metrics:9090
+    description: "Network policy for API Gateway with granular access controls"
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: istio-system
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - port: 3000
+          protocol: TCP
+        - port: 9090
+          protocol: TCP
+          name: metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 9090
+          protocol: TCP
+          name: metrics
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: translation-service
+      ports:
+        - port: 8000
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 9090
+          protocol: TCP
+
+---
+# Network policy for Translation Service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: translation-service-policy
+  namespace: detection-platform
+  annotations:
+    security.kubernetes.io/policy-type: service-specific
+    compliance.kubernetes.io/nist: AC-4,SC-7
+    monitoring.kubernetes.io/ports: metrics:9091
+    description: "Network policy for Translation Service with granular access controls"
+spec:
+  podSelector:
+    matchLabels:
+      app: translation-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - port: 8000
+          protocol: TCP
+        - port: 9091
+          protocol: TCP
+          name: metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 9091
+          protocol: TCP
+          name: metrics
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: validation-service
+      ports:
+        - port: 8001
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 9091
+          protocol: TCP
+
+---
+# Network policy for Validation Service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: validation-service-policy
+  namespace: detection-platform
+  annotations:
+    security.kubernetes.io/policy-type: service-specific
+    compliance.kubernetes.io/nist: AC-4,SC-7
+    monitoring.kubernetes.io/ports: metrics:9092
+    description: "Network policy for Validation Service with granular access controls"
+spec:
+  podSelector:
+    matchLabels:
+      app: validation-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: translation-service
+      ports:
+        - port: 8001
+          protocol: TCP
+        - port: 9092
+          protocol: TCP
+          name: metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 9092
+          protocol: TCP
+          name: metrics
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - port: 9092
+          protocol: TCP
