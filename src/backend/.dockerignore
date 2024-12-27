@@ -1,0 +1,130 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+.github/
+
+# Development environments
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+*.swp
+*.swo
+.editorconfig
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+poetry.lock
+package-lock.json
+yarn.lock
+
+# Testing and coverage
+coverage/
+.coverage
+.pytest_cache/
+__tests__/
+tests/
+test/
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+jest.config.js
+pytest.ini
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+*.egg
+.next/
+out/
+
+# Documentation
+docs/
+*.md
+LICENSE
+CHANGELOG
+AUTHORS
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+.docker/
+
+# Logs and databases
+*.log
+*.sqlite
+*.sqlite3
+*.db
+logs/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Security and credentials
+*.pem
+*.key
+*.crt
+*.csr
+secrets/
+.ssh/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# IDE specific
+.settings/
+*.sublime-*
+*.code-workspace
+.project
+.classpath
+
+# Service specific exclusions
+api-gateway/coverage/
+api-gateway/dist/
+translation-service/__pycache__/
+validation-service/target/
+
+# Metrics and monitoring
+prometheus/
+grafana/
+
+# Development tools
+nodemon.json
+.eslintrc*
+.prettierrc*
+.stylelintrc*
+tslint.json
+mypy.ini
+.flake8
+
+# Backup files
+*.bak
+*~
+*.swp
+*.swo
+
+# Local development overrides
+docker-compose.override.yml
