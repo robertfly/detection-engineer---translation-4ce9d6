@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    // Modern ECMAScript target for broad browser support
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    
+    // Module system configuration
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    
+    // React configuration
+    "jsx": "react-jsx",
+    
+    // Strict type checking
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    
+    // JavaScript interop
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    
+    // Path resolution
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  
+  // Source files to include
+  "include": ["src"],
+  
+  // Reference to Node-specific configuration
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ]
+}
