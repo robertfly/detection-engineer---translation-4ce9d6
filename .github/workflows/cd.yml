@@ -1,0 +1,229 @@
+# Detection Translation Platform CD Workflow
+# Version: 1.0.0
+# Handles automated deployment to staging and production environments with sophisticated deployment strategies
+
+name: Continuous Deployment
+
+# Trigger on successful CI workflow completion or manual dispatch
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        description: 'Target environment'
+        options:
+          - staging
+          - production
+        required: true
+      force_deploy:
+        type: boolean
+        description: 'Force deployment (bypass checks)'
+        default: false
+
+# Environment variables
+env:
+  DOCKER_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  STAGING_NAMESPACE: detection-platform-staging
+  PRODUCTION_NAMESPACE: detection-platform-prod
+  CANARY_WEIGHT: '20'
+  HEALTH_CHECK_RETRIES: '5'
+  HEALTH_CHECK_INTERVAL: '30s'
+  ROLLOUT_INTERVAL: '10m'
+  ERROR_THRESHOLD: '1.0'
+  LATENCY_THRESHOLD: '500ms'
+
+# Prevent concurrent deployments
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.inputs.environment == 'staging' }}
+    environment: staging
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Set Kubernetes context
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+          namespace: ${{ env.STAGING_NAMESPACE }}
+
+      # Blue-Green Deployment Strategy for Staging
+      - name: Create green deployment
+        run: |
+          # Generate unique deployment name
+          GREEN_DEPLOYMENT="web-green-$(date +%s)"
+          
+          # Deploy new (green) version
+          kubectl create deployment $GREEN_DEPLOYMENT \
+            --image=${{ env.DOCKER_REGISTRY }}/web:${{ github.sha }} \
+            --namespace=${{ env.STAGING_NAMESPACE }}
+          
+          # Scale deployment
+          kubectl scale deployment $GREEN_DEPLOYMENT --replicas=2
+          
+          echo "GREEN_DEPLOYMENT=$GREEN_DEPLOYMENT" >> $GITHUB_ENV
+
+      - name: Run health checks
+        run: |
+          attempts=0
+          while [ $attempts -lt ${{ env.HEALTH_CHECK_RETRIES }} ]; do
+            if kubectl rollout status deployment/${{ env.GREEN_DEPLOYMENT }} --timeout=${{ env.HEALTH_CHECK_INTERVAL }}; then
+              echo "Health checks passed"
+              exit 0
+            fi
+            attempts=$((attempts + 1))
+            sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+          done
+          echo "Health checks failed"
+          exit 1
+
+      - name: Switch traffic to green deployment
+        run: |
+          # Update service to point to green deployment
+          kubectl patch service web-service -p \
+            "{\"spec\":{\"selector\":{\"app\":\"${{ env.GREEN_DEPLOYMENT }}\"}}}}"
+
+      - name: Remove blue deployment
+        if: success()
+        run: |
+          # Get old (blue) deployments
+          BLUE_DEPLOYMENTS=$(kubectl get deployments -l app=web \
+            --no-headers -o custom-columns=":metadata.name" | grep -v ${{ env.GREEN_DEPLOYMENT }})
+          
+          # Remove old deployments
+          for deployment in $BLUE_DEPLOYMENTS; do
+            kubectl delete deployment $deployment
+          done
+
+      - name: Send metrics to Datadog
+        uses: datadog/action-datadog-metric@v1
+        with:
+          api-key: ${{ secrets.DATADOG_API_KEY }}
+          metric-name: 'deployment.staging.success'
+          metric-value: '1'
+          tags: "environment:staging,version:${{ github.sha }}"
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.inputs.environment == 'production' }}
+    environment: production
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Set Kubernetes context
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+          namespace: ${{ env.PRODUCTION_NAMESPACE }}
+
+      # Canary Deployment Strategy for Production
+      - name: Deploy canary
+        run: |
+          # Create canary deployment
+          kubectl create deployment web-canary \
+            --image=${{ env.DOCKER_REGISTRY }}/web:${{ github.sha }} \
+            --namespace=${{ env.PRODUCTION_NAMESPACE }}
+          
+          # Set initial traffic weight
+          kubectl annotate deployment web-canary \
+            "nginx.ingress.kubernetes.io/canary=true" \
+            "nginx.ingress.kubernetes.io/canary-weight=${{ env.CANARY_WEIGHT }}"
+
+      - name: Monitor canary health
+        run: |
+          for i in {1..5}; do
+            # Monitor error rates and latency
+            ERROR_RATE=$(kubectl exec -it deploy/web-canary -- curl -s localhost:9090/metrics | grep error_rate)
+            LATENCY=$(kubectl exec -it deploy/web-canary -- curl -s localhost:9090/metrics | grep latency_p95)
+            
+            if (( $(echo "$ERROR_RATE > ${{ env.ERROR_THRESHOLD }}" | bc -l) )) || \
+               (( $(echo "$LATENCY > ${{ env.LATENCY_THRESHOLD }}" | bc -l) )); then
+              echo "Canary health check failed"
+              exit 1
+            fi
+            
+            # Increase traffic weight
+            NEW_WEIGHT=$((CANARY_WEIGHT * (i + 1)))
+            kubectl annotate deployment web-canary \
+              "nginx.ingress.kubernetes.io/canary-weight=$NEW_WEIGHT" --overwrite
+            
+            sleep ${{ env.ROLLOUT_INTERVAL }}
+          done
+
+      - name: Complete production rollout
+        if: success()
+        run: |
+          # Update main deployment
+          kubectl set image deployment/web \
+            web=${{ env.DOCKER_REGISTRY }}/web:${{ github.sha }}
+          
+          # Remove canary
+          kubectl delete deployment web-canary
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl delete deployment web-canary
+          kubectl rollout undo deployment/web
+
+      - name: Send deployment metrics
+        uses: datadog/action-datadog-metric@v1
+        with:
+          api-key: ${{ secrets.DATADOG_API_KEY }}
+          metric-name: 'deployment.production.success'
+          metric-value: '1'
+          tags: "environment:production,version:${{ github.sha }}"
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"Production deployment ${{ job.status }}: ${{ github.sha }}\"}"
