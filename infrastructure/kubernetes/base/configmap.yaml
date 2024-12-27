@@ -1,0 +1,78 @@
+# Kubernetes ConfigMap for Detection Translation Platform
+# Version: v1
+# Purpose: Defines core service configurations for the detection translation platform
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: detection-platform-config
+  namespace: detection-platform
+  labels:
+    app: detection-platform
+    component: config
+data:
+  # API Gateway Configuration
+  api-gateway.conf: |
+    # Service Discovery
+    TRANSLATION_SERVICE_HOST=translation-service
+    TRANSLATION_SERVICE_PORT=50051
+    VALIDATION_SERVICE_HOST=validation-service
+    VALIDATION_SERVICE_PORT=50052
+
+    # Request Handling
+    SERVICE_TIMEOUT=10000
+    MAX_RETRIES=3
+    RATE_LIMIT_WINDOW=60000
+    RATE_LIMIT_MAX_REQUESTS=100
+
+    # Observability
+    LOG_LEVEL=info
+    METRICS_ENABLED=true
+    TRACING_ENABLED=true
+    HEALTH_CHECK_INTERVAL=30s
+
+  # Translation Service Configuration
+  translation-service.conf: |
+    # GenAI Model Configuration
+    MODEL_NAME=gpt-4
+    EMBEDDING_MODEL=text-embedding-ada-002
+    TEMPERATURE=0.2
+    MAX_TOKENS=4096
+
+    # Cache Configuration
+    EMBEDDINGS_CACHE_DIR=/tmp/embeddings-cache
+    CACHE_TTL=3600
+    
+    # Processing Configuration
+    BATCH_SIZE=10
+    SUPPORTED_FORMATS=["splunk","qradar","sigma","kql","paloalto","crowdstrike","yara","yaral"]
+    
+    # Service Settings
+    LOG_LEVEL=info
+    REQUEST_TIMEOUT=300s
+    VALIDATION_ENABLED=true
+    METRICS_ENABLED=true
+    HEALTH_CHECK_INTERVAL=30s
+
+  # Validation Service Configuration
+  validation-service.conf: |
+    # Server Configuration
+    SERVER_HOST=0.0.0.0
+    SERVER_PORT=50052
+    REQUEST_TIMEOUT=60s
+    SHUTDOWN_TIMEOUT=30s
+    
+    # Validation Settings
+    MAX_RULE_SIZE=1048576
+    VALIDATION_TIMEOUT=30s
+    VALIDATION_CACHE_SIZE=1000
+    VALIDATION_CACHE_TTL=3600
+    ERROR_THRESHOLD=0.05
+    
+    # Supported Formats
+    SUPPORTED_FORMATS=["splunk","qradar","sigma","kql","paloalto","crowdstrike","yara","yaral"]
+    
+    # Observability
+    METRICS_ENABLED=true
+    LOG_LEVEL=info
+    HEALTH_CHECK_INTERVAL=30s
