@@ -1,0 +1,168 @@
+# Horizontal Pod Autoscaler Configuration for Detection Translation Platform
+# Version: v1.0.0
+# Purpose: Defines autoscaling policies for platform services with optimized thresholds
+# Dependencies: Requires deployment configurations for web, api-gateway, translation-service, and validation-service
+
+---
+# Web Frontend HPA Configuration
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-hpa
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: web
+    tier: frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 3  # Ensures high availability
+  maxReplicas: 10 # Allows for significant traffic spikes
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70  # Conservative CPU threshold
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80  # Memory threshold aligned with container limits
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60  # Quick scale up response
+      policies:
+        - type: Pods
+          value: 2  # Add up to 2 pods per minute
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Gradual scale down
+
+---
+# API Gateway HPA Configuration
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway-hpa
+  namespace: detection-platform
+  labels:
+    app: api-gateway
+    component: gateway
+    tier: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway
+  minReplicas: 3  # Maintains high availability
+  maxReplicas: 12 # Higher ceiling for API layer
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75  # Balanced CPU threshold
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80  # Memory threshold for optimal performance
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2  # Controlled scaling
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Conservative scale down
+
+---
+# Translation Service HPA Configuration
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: translation-service-hpa
+  namespace: detection-platform
+  labels:
+    app.kubernetes.io/name: translation-service
+    app.kubernetes.io/component: translation
+    tier: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: translation-service
+  minReplicas: 3  # Base high availability
+  maxReplicas: 15 # Higher ceiling for compute-intensive workloads
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80  # Higher threshold for CPU-intensive operations
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 85  # Higher memory threshold for ML operations
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 3  # Aggressive scaling for translation workloads
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Careful scale down
+
+---
+# Validation Service HPA Configuration
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: validation-service-hpa
+  namespace: detection-platform
+  labels:
+    app.kubernetes.io/name: validation-service
+    app.kubernetes.io/component: validation
+    tier: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: validation-service
+  minReplicas: 3  # Maintains high availability
+  maxReplicas: 12 # Balanced scaling ceiling
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75  # Balanced CPU threshold
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80  # Optimal memory utilization
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2  # Controlled scaling
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Gradual scale down
