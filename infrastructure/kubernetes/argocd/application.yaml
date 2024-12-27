@@ -1,0 +1,97 @@
+# ArgoCD Application manifest for Detection Translation Platform
+# Version: argoproj.io/v1alpha1 1.0.0
+# Purpose: Manages GitOps-based deployment with enhanced security and reliability controls
+# Security Compliance: SOC 2 Type II and NIST 800-53 controls implemented
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: detection-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Sync wave for controlled deployment ordering
+    argocd.argoproj.io/sync-wave: "1"
+    # Enable validation during sync
+    argocd.argoproj.io/sync-options: "Validate=true"
+    # Security and compliance annotations
+    compliance.security/soc2: "enabled"
+    compliance.security/nist: "800-53"
+    # Deployment strategy annotations
+    deployment.kubernetes.io/strategy: "rolling"
+    deployment.kubernetes.io/revision-history: "10"
+
+spec:
+  # Reference to the ArgoCD project for access control and resource scoping
+  project: detection-platform
+
+  # Source configuration for GitOps management
+  source:
+    repoURL: https://github.com/org/detection-platform
+    targetRevision: HEAD
+    path: infrastructure/kubernetes
+    directory:
+      recurse: true
+      exclude: "argocd/*"
+      jsonnet:
+        tlas:
+          - name: environment
+            value: production
+
+  # Deployment destination configuration
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: detection-platform
+
+  # Sync policy with automated healing and pruning
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+      - ValidateSignatures=true
+    # Retry strategy with exponential backoff
+    retry:
+      limit: 5
+      backoff:
+        duration: "5s"
+        factor: 2
+        maxDuration: "3m"
+
+  # Resource difference management
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/spec/containers/0/resources
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+      jsonPointers:
+        - /spec/ingress/0/from
+
+  # Deployment history configuration
+  revisionHistoryLimit: 10
+
+  # Application metadata and documentation
+  info:
+    - name: Description
+      value: Detection Translation Platform deployment
+    - name: Owner
+      value: Security Engineering Team
+    - name: Environment
+      value: Production
+    - name: Criticality
+      value: High
+
+  # Health check configuration
+  health:
+    healthCheckRetries: 3
+    healthCheckTimeout: 5s
+    healthCheckPeriod: 30s
