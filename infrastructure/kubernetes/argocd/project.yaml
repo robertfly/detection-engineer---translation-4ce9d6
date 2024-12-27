@@ -1,0 +1,93 @@
+# ArgoCD Project manifest for Detection Translation Platform
+# Version: argoproj.io/v1alpha1 1.0.0
+# Purpose: Defines project-level configuration and access control for GitOps deployment
+# Security Compliance: SOC 2 Type II and NIST 800-53 controls implemented
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: detection-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    compliance.security/soc2: "enabled"
+    compliance.security/nist: "800-53"
+
+spec:
+  # Project description and purpose
+  description: Detection Translation Platform Project with enhanced security controls
+
+  # Authorized source repositories for GitOps deployments
+  sourceRepos:
+    - https://github.com/org/detection-platform
+    - https://github.com/org/detection-platform-config
+
+  # Authorized deployment destinations with namespace restrictions
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: detection-platform-*
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+    - server: https://kubernetes.default.svc
+      namespace: logging
+
+  # Cluster-wide resource access control
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+
+  # Namespace-scoped resource access control
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+
+  # Role-based access control definitions
+  roles:
+    # Administrator role with enhanced security controls
+    - name: project-admin
+      description: Project administrator role with enhanced security controls
+      policies:
+        - p, proj:detection-platform:project-admin, applications, *, detection-platform/*, allow
+        - p, proj:detection-platform:project-admin, logs, get, detection-platform/*, allow
+        - p, proj:detection-platform:project-admin, exec, create, detection-platform/*, deny
+      jwtTokens: []
+
+    # Read-only role for auditors and compliance monitoring
+    - name: project-readonly
+      description: Read-only access for auditors
+      policies:
+        - p, proj:detection-platform:project-readonly, applications, get, detection-platform/*, allow
+        - p, proj:detection-platform:project-readonly, logs, get, detection-platform/*, allow
+      jwtTokens: []
+
+  # Deployment window configuration for controlled releases
+  syncWindows:
+    - kind: allow
+      schedule: "0 2 * * *"  # Daily maintenance window at 2 AM UTC
+      duration: "2h"
+      applications: ["*"]
+      manualSync: true
+      timeZone: UTC
+
+  # Orphaned resource management
+  orphanedResources:
+    warn: true
+    ignore:
+      - group: apps
+        kind: Deployment
+        name: temp-*
+      - group: batch
+        kind: Job
+        name: cleanup-*
+
+  # Digital signature verification for secure deployments
+  signatureKeys:
+    - keyID: detection-platform-signer
