@@ -1,0 +1,169 @@
+# Prometheus Kubernetes Manifest
+# Version: 2.47+
+# Operator Version: 0.69+
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: prometheus-server
+  namespace: monitoring
+  labels:
+    app: prometheus
+    component: monitoring
+    managed-by: terraform
+    environment: production
+spec:
+  replicas: 2  # High availability deployment
+  serviceAccountName: monitoring-sa
+  podMonitorSelector: {}
+  serviceMonitorSelector:
+    matchLabels:
+      app: detection-platform
+  
+  # High Availability Configuration
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - prometheus
+        topologyKey: kubernetes.io/hostname
+
+  # Resource Management
+  resources:
+    requests:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+  # Storage Configuration
+  storage:
+    volumeClaimTemplate:
+      spec:
+        storageClassName: gp3-encrypted
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi
+  retention: 30d
+  retentionSize: 85GB
+
+  # Security Context
+  securityContext:
+    fsGroup: 2000
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+
+  # Service Discovery and Monitoring
+  serviceMonitorNamespaceSelector: {}
+  serviceMonitors:
+  - jobLabel: detection-platform
+    endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      scheme: https
+      tlsConfig:
+        insecureSkipVerify: false
+        serverName: detection-platform
+
+  # Alerting Configuration
+  alerting:
+    alertmanagers:
+    - namespace: monitoring
+      name: alertmanager
+      port: 9093
+      scheme: https
+      tlsConfig:
+        caFile: /etc/prometheus/secrets/alertmanager-ca/ca.crt
+
+  # Alert Rules
+  ruleSelector: {}
+  ruleNamespaceSelector: {}
+  rules:
+    groups:
+    - name: APIGatewayRules
+      rules:
+      - alert: HighRequestRate
+        expr: rate(http_requests_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: High API request rate detected
+          description: API Gateway is experiencing high request volume
+      
+      - alert: HighErrorRate
+        expr: rate(http_requests_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: High error rate detected
+          description: API Gateway error rate exceeds threshold
+
+    - name: AuthenticationRules
+      rules:
+      - alert: HighFailedLogins
+        expr: rate(auth_failed_logins_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: High failed login attempts
+          description: Multiple failed authentication attempts detected
+
+---
+# Service for Prometheus
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: monitoring
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  ports:
+  - name: web
+    port: 9090
+    targetPort: 9090
+  selector:
+    app: prometheus
+  type: ClusterIP
+
+---
+# ServiceMonitor for Prometheus self-monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: prometheus-servicemonitor
+  namespace: monitoring
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: prometheus
+  endpoints:
+  - port: web
+    interval: 15s
+    path: /metrics
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: false
+      serverName: prometheus-server
