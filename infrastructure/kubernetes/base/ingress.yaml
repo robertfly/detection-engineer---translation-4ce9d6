@@ -1,0 +1,92 @@
+# Kubernetes Ingress Configuration for Detection Translation Platform
+# Version: v1.0.0
+# Purpose: Defines HTTP/HTTPS routing rules and TLS configuration for external access
+# Dependencies: 
+#   - web-service (Service)
+#   - api-gateway-service (Service)
+#   - detection-translator-tls (Certificate)
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: detection-translator-ingress
+  namespace: detection-platform
+  labels:
+    app: detection-translator
+    component: ingress
+    environment: production
+  annotations:
+    # Ingress Controller Configuration
+    kubernetes.io/ingress.class: "nginx"
+    
+    # SSL/TLS Configuration
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    
+    # Request Handling
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    
+    # CORS Configuration
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://detection-translator.example.com"
+    
+    # Security Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'";
+    
+    # Rate Limiting
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    
+    # WAF Configuration
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
+    nginx.ingress.kubernetes.io/modsecurity-snippet: |
+      SecRuleEngine On
+      SecRequestBodyAccess On
+      SecRule REQUEST_HEADERS:User-Agent "@contains bad" "id:1,deny,status:403"
+      SecRule REQUEST_HEADERS:Content-Type "!@rx ^(?:application/json|multipart/form-data|application/x-www-form-urlencoded)$" "id:2,deny,status:415"
+
+spec:
+  tls:
+    - hosts:
+        - detection-translator.example.com
+      secretName: detection-translator-tls
+  rules:
+    - host: detection-translator.example.com
+      http:
+        paths:
+          # API Gateway Routes
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 80
+          
+          # Health Check Endpoint
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 80
+          
+          # Web Frontend Routes
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80
