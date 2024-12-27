@@ -1,0 +1,26 @@
+# cert-manager.io/v1 ClusterIssuer for Let's Encrypt production environment
+# Provides automated TLS certificate management for the Detection Translation Platform
+# Version: cert-manager.io/v1
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app: detection-translator
+    component: cert-issuer
+spec:
+  acme:
+    # Production Let's Encrypt ACME server endpoint
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email for important notifications about certificates
+    email: platform-security@detection-translator.example.com
+    # Secret to store the ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    # Challenge solver configuration
+    solvers:
+      # HTTP-01 challenge solver using istio ingress
+      - http01:
+          ingress:
+            class: istio
