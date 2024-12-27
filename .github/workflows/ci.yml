@@ -1,0 +1,302 @@
+# Detection Translation Platform CI Workflow
+# Version: 1.0.0
+# Handles building, testing, and validating the application across all services
+
+name: Continuous Integration
+
+on:
+  push:
+    branches: ['main', 'develop']
+  pull_request:
+    branches: ['main', 'develop']
+
+env:
+  # Global environment variables
+  NODE_VERSION: '20.x'
+  PYTHON_VERSION: '3.11'
+  GO_VERSION: '1.21'
+  CI: true
+  DOCKER_BUILDKIT: '1'
+  TEST_COVERAGE_THRESHOLD: '90'
+  NODE_ENV: 'test'
+  PYTHON_ENV: 'test'
+  GO_ENV: 'test'
+  DOCKER_BUILDKIT_PROGRESS: 'plain'
+  ACTIONS_RUNNER_DEBUG: 'true'
+
+# Prevent concurrent workflow runs to avoid conflicts
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-dependencies:
+    name: Install Dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Web application dependencies
+      - name: Cache web dependencies
+        uses: actions/cache@v3
+        with:
+          path: src/web/node_modules
+          key: npm-web-${{ runner.os }}-${{ hashFiles('src/web/package-lock.json') }}
+          restore-keys: npm-web-${{ runner.os }}-
+
+      - name: Install web dependencies
+        working-directory: src/web
+        run: npm ci --frozen-lockfile
+
+      # API Gateway dependencies
+      - name: Cache API Gateway dependencies
+        uses: actions/cache@v3
+        with:
+          path: src/backend/api-gateway/node_modules
+          key: npm-api-${{ runner.os }}-${{ hashFiles('src/backend/api-gateway/package-lock.json') }}
+          restore-keys: npm-api-${{ runner.os }}-
+
+      - name: Install API Gateway dependencies
+        working-directory: src/backend/api-gateway
+        run: npm ci --frozen-lockfile
+
+      # Python Translation Service dependencies
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: pip-${{ runner.os }}-
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/backend/translation-service/requirements.txt
+
+      # Go Validation Service dependencies
+      - name: Cache Go dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Install Go dependencies
+        working-directory: src/backend/validation-service
+        run: go mod download
+
+  test:
+    name: Run Tests
+    needs: install-dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Restore all cached dependencies
+      - name: Restore dependency caches
+        uses: actions/cache@v3
+        with:
+          path: |
+            src/web/node_modules
+            src/backend/api-gateway/node_modules
+            ~/.cache/pip
+            ~/go/pkg/mod
+          key: deps-${{ runner.os }}-${{ github.sha }}
+
+      # Run tests for all services
+      - name: Run web tests
+        working-directory: src/web
+        run: npm run test:coverage
+
+      - name: Run API Gateway tests
+        working-directory: src/backend/api-gateway
+        run: npm run test
+
+      - name: Run Translation Service tests
+        working-directory: src/backend/translation-service
+        run: pytest --cov=. --cov-report=xml
+
+      - name: Run Validation Service tests
+        working-directory: src/backend/validation-service
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      # Verify coverage meets threshold
+      - name: Check coverage threshold
+        run: |
+          echo "Checking test coverage meets $TEST_COVERAGE_THRESHOLD% threshold"
+          for file in */coverage.xml */coverage.txt; do
+            if [ -f "$file" ]; then
+              coverage_value=$(grep -oP '(?<=line-rate=")[^"]*' "$file" || echo "0")
+              if (( $(echo "$coverage_value < $TEST_COVERAGE_THRESHOLD" | bc -l) )); then
+                echo "Coverage $coverage_value% is below threshold of $TEST_COVERAGE_THRESHOLD%"
+                exit 1
+              fi
+            fi
+          done
+
+      # Upload test results
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            **/coverage.xml
+            **/coverage.txt
+            **/junit.xml
+          retention-days: 30
+
+  quality:
+    name: Code Quality
+    needs: install-dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Restore cached dependencies
+      - name: Restore dependency caches
+        uses: actions/cache@v3
+        with:
+          path: |
+            src/web/node_modules
+            src/backend/api-gateway/node_modules
+            ~/.cache/pip
+            ~/go/pkg/mod
+          key: deps-${{ runner.os }}-${{ github.sha }}
+
+      # Run linting and formatting checks
+      - name: Lint web application
+        working-directory: src/web
+        run: |
+          npm run lint
+          npm run format -- --check
+
+      - name: Lint API Gateway
+        working-directory: src/backend/api-gateway
+        run: |
+          npm run lint
+          npm run format -- --check
+
+      - name: Lint Translation Service
+        run: |
+          pip install pylint
+          pylint src/backend/translation-service
+
+      - name: Lint Validation Service
+        working-directory: src/backend/validation-service
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          golangci-lint run
+
+  build:
+    name: Build Services
+    needs: [test, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build and package all services
+      - name: Build web application
+        working-directory: src/web
+        run: npm run build
+
+      - name: Build API Gateway
+        working-directory: src/backend/api-gateway
+        run: npm run build
+
+      - name: Build Docker images
+        run: |
+          docker buildx create --use
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag ghcr.io/${{ github.repository }}/web:${{ github.sha }} \
+            --file src/web/Dockerfile .
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag ghcr.io/${{ github.repository }}/api-gateway:${{ github.sha }} \
+            --file src/backend/api-gateway/Dockerfile .
+
+      # Upload build artifacts
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: |
+            src/web/dist
+            src/backend/api-gateway/dist
+            src/backend/translation-service/dist
+            src/backend/validation-service/dist
+          retention-days: 30
+
+  security:
+    name: Security Scan
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Run security scans
+      - name: Run npm audit
+        run: |
+          cd src/web && npm audit
+          cd ../backend/api-gateway && npm audit
+
+      - name: Run Python security scan
+        run: |
+          pip install safety
+          safety check -r src/backend/translation-service/requirements.txt
+
+      - name: Run Go security scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          cd src/backend/validation-service && govulncheck ./...
+
+      - name: Run container security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'ghcr.io/${{ github.repository }}/web:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      # Upload security scan results
+      - name: Upload security results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
