@@ -59,7 +59,7 @@ jobs:
 
       # Web application dependencies
       - name: Cache web dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: src/web/node_modules
           key: npm-web-${{ runner.os }}-${{ hashFiles('src/web/package-lock.json') }}
@@ -71,7 +71,7 @@ jobs:
 
       # API Gateway dependencies
       - name: Cache API Gateway dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: src/backend/api-gateway/node_modules
           key: npm-api-${{ runner.os }}-${{ hashFiles('src/backend/api-gateway/package-lock.json') }}
@@ -83,7 +83,7 @@ jobs:
 
       # Python Translation Service dependencies
       - name: Cache Python dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
@@ -96,7 +96,7 @@ jobs:
 
       # Go Validation Service dependencies
       - name: Cache Go dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
           key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
@@ -118,7 +118,7 @@ jobs:
 
       # Restore all cached dependencies
       - name: Restore dependency caches
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             src/web/node_modules
@@ -160,7 +160,7 @@ jobs:
 
       # Upload test results
       - name: Upload test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: |
@@ -181,7 +181,7 @@ jobs:
 
       # Restore cached dependencies
       - name: Restore dependency caches
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             src/web/node_modules
@@ -252,7 +252,7 @@ jobs:
 
       # Upload build artifacts
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: |
@@ -297,6 +297,6 @@ jobs:
 
       # Upload security scan results
       - name: Upload security results
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'

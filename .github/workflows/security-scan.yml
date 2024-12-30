@@ -31,13 +31,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
       - name: Cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.npm
@@ -73,7 +73,7 @@ jobs:
           jq -s '.' ./*-deps-report.json > consolidated-deps-report.json
 
       - name: Upload Dependency Scan Results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dependency-scan-results
           path: |
@@ -91,13 +91,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download container artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: docker-images
           path: ./docker-images
 
       - name: Setup Trivy
-        uses: aquasecurity/trivy-action@0.14.0
+        uses: aquasecurity/trivy-action@0.29.0
         with:
           format: 'json'
           output: 'trivy-results.json'
@@ -117,7 +117,7 @@ jobs:
         run: trivy image --severity ${{ env.TRIVY_SEVERITY }} validation-service:latest
 
       - name: Upload Container Scan Results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: container-scan-results
           path: trivy-results.json
@@ -137,21 +137,21 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ env.CODEQL_LANGUAGES }}
           queries: security-extended,security-and-quality
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
+        uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
 
       - name: Upload SARIF report
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
 
@@ -163,7 +163,7 @@ jobs:
 
     steps:
       - name: Download all scan results
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: ./scan-results
 
@@ -176,7 +176,7 @@ jobs:
           echo "Code Analysis: ${{ needs.code_analysis.result }}" >> security-report.md
 
       - name: Upload consolidated report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: security-report
           path: |
